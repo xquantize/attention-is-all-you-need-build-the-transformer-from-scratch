@@ -270,8 +270,18 @@ def project_to_query_key_value(x, w_q, b_q, w_k, b_k, w_v, b_v):
 
     return q, k, v
 
-# Step 28 - split_qkv_into_heads (not yet solved)
-# TODO: implement
+# Step 28 - split_qkv_into_heads
+import torch
+
+def split_qkv_into_heads(q, k, v, num_heads):
+    # TODO: split each of q, k, v into (B, num_heads, L, d_k) and return as a tuple
+    def _transform(tensor: torch.Tensor) -> torch.Tensor:
+        batch_size, seq_len, d_model = tensor.shape
+        head_dim = d_model // num_heads
+
+        return tensor.view(batch_size, seq_len, num_heads, head_dim).transpose(1, 2)
+
+    return _transform(q), _transform(k), _transform(v)
 
 # Step 29 - multi_head_scaled_dot_product_attention (not yet solved)
 # TODO: implement
