@@ -318,8 +318,52 @@ def merge_heads_and_project_output(context, w_o, b_o):
 
     return out
 
-# Step 31 - assemble_multi_head_attention_forward (not yet solved)
-# TODO: implement
+# Step 31 - assemble_multi_head_attention_forward
+def assemble_multi_head_attention_forward(query, key, value, w_q, w_k, w_v, w_o, num_heads, mask=None):
+    # TODO: project Q/K/V, split into heads, run scaled dot-product attention, merge heads, output projection.
+    if isinstance(query, tuple):
+        q_tensor, k_tensor, v_tensor = query
+        w_q, w_k, w_v, w_o, num_heads, mask = key, value, w_q, w_k, w_v, w_o
+        query, key, value = q_tensor, k_tensor, v_tensor
+
+    if key is None:
+        key = query
+    if value is None:
+        value = query
+    
+    q = query @ w_q.transpose(-1, -2)
+    k = key @ w_k.transpose(-1, -2)
+    v = value @ w_v.transpose(-1, -2)
+
+    def _split(tensor: torch.Tensor) -> torch.Tensor:
+        batch_size, seq_len, d_model = tensor.shape
+        head_dim = d_model // num_heads
+
+        return tensor.view(batch_size, seq_len, num_heads, head_dim).transpose(1, 2)
+
+    q_h = _split(q)
+    k_h = _split(k)
+    v_h = _split(v)
+
+    d_k = q_h.size(-1)
+
+    scores = q_h @ k_h.transpose(-1, -2)
+    scores = scores / math.sqrt(d_k)
+
+    if mask is not None:
+        scores = scores.masked_fill(mask == 0, float('-inf'))
+
+    weights = torch.softmax(scores, dim=-1)
+    weights = torch.nan_to_num(weights, nan=0.0)
+
+    context = weights @ v_h
+
+    batch_size, _, seq_len, head_dim = context.shape
+    merged = context.transpose(1, 2).contiguous().view(batch_size, seq_len, num_heads * head_dim)
+
+    output = merged @ w_o.transpose(-1, -2)
+
+    return output
 
 # Step 32 - apply_ffn_first_linear_and_relu (not yet solved)
 # TODO: implement
