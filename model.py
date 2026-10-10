@@ -303,8 +303,20 @@ def multi_head_scaled_dot_product_attention(q_h, k_h, v_h, mask=None):
 
     return context, weights
 
-# Step 30 - merge_heads_and_project_output (not yet solved)
-# TODO: implement
+# Step 30 - merge_heads_and_project_output
+import torch
+
+def merge_heads_and_project_output(context, w_o, b_o):
+    # TODO: merge the head axis back into d_model and apply the output linear projection.
+    batch_size, num_heads, seq_len, head_dim = context.shape
+    merged = context.transpose(1, 2).contiguous().view(batch_size, seq_len, num_heads * head_dim)
+
+    out = merged @ w_o.transpose(-1, -2)
+
+    if b_o is not None:
+        out = out + b_o
+
+    return out
 
 # Step 31 - assemble_multi_head_attention_forward (not yet solved)
 # TODO: implement
