@@ -685,8 +685,34 @@ def decoder_layer_cross_attention_sublayer(y, encoder_output, w_q, w_k, w_v, w_o
 
     return norm
 
-# Step 45 - decoder_layer_feed_forward_sublayer (not yet solved)
-# TODO: implement
+# Step 45 - decoder_layer_feed_forward_sublayer
+import torch
+
+def decoder_layer_feed_forward_sublayer(y, w1, b1, w2, b2, gamma, beta):
+    # TODO: run the position-wise FFN on y and wrap it with residual add-and-norm
+    h = y @ w1
+
+    if b1 is not None:
+        h = h + b1
+
+    h = torch.relu(h)
+
+    ffn_out = h @ w2
+
+    if b2 is not None:
+        ffn_out = ffn_out + b2
+
+    y_res = y + ffn_out
+    mean = y_res.mean(dim=-1, keepdim=True)
+    var = y_res.var(dim=-1, unbiased=False, keepdim=True)
+    norm = (y_res - mean) / torch.sqrt(var + 1e-5)
+
+    if gamma is not None:
+        norm = norm * gamma
+    if beta is not None:
+        norm = norm + beta
+
+    return norm
 
 # Step 46 - assemble_decoder_layer (not yet solved)
 # TODO: implement
