@@ -591,8 +591,46 @@ def stack_encoder_layers(x, encoder_layer_params_list, num_heads, src_mask):
 
     return x
 
-# Step 43 - decoder_layer_masked_self_attention_sublayer (not yet solved)
-# TODO: implement
+# Step 43 - decoder_layer_masked_self_attention_sublayer
+import torch
+
+def decoder_layer_masked_self_attention_sublayer(y, w_q, w_k, w_v, w_o, gamma, beta, num_heads, tgt_mask):
+    # TODO: run masked multi-head self-attention on y and wrap with residual add-and-norm.
+    batch_size, seq_len, d_model = y.shape
+    head_dim = d_model // num_heads
+
+    q = y @ w_q.transpose(-1, -2)
+    k = y @ w_k.transpose(-1, -2)
+    v = y @ w_v.transpose(-1, -2)
+
+    def _split(tensor: torch.Tensor) -> torch.Tensor:
+        return tensor.view(batch_size, seq_len, num_heads, head_dim).transpose(1, 2)
+
+    q_h, k_h, v_h = _split(q), _split(k), _split(v)
+    scores = (q_h @ k_h.transpose(-1, -2)) / math.sqrt(head_dim)
+
+    if tgt_mask is not None:
+        scores = scores.masked_fill(~tgt_mask, float('-inf'))
+
+    weights = torch.softmax(scores, dim=-1)
+    weights = torch.nan_to_num(weights, nan=0.0)
+    context = weights @ v_h
+
+    merged = context.transpose(1, 2).contiguous().view(batch_size, seq_len, num_heads * head_dim)
+    attn_out = merged @ w_o.transpose(-1, -2)
+
+    y_res = y + attn_out
+    mean = y_res.mean(dim=-1, keepdim=True)
+    var = y_res.var(dim=-1, unbiased=False, keepdim=True)
+    norm = (y_res - mean) / torch.sqrt(var + 1e-5)
+
+    if gamma is not None:
+        norm = norm * gamma
+
+    if beta is not None:
+        norm = norm + beta
+
+    return norm
 
 # Step 44 - decoder_layer_cross_attention_sublayer (not yet solved)
 # TODO: implement
