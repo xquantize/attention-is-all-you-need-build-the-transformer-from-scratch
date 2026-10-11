@@ -418,8 +418,20 @@ def normalize_and_scale_with_gamma_beta(x, gamma, beta, eps=1e-5):
 
     return out
 
-# Step 37 - apply_residual_add_and_norm (not yet solved)
-# TODO: implement
+# Step 37 - apply_residual_add_and_norm
+import torch
+
+def apply_residual_add_and_norm(residual_input, sublayer_output, gamma, beta, eps=1e-5):
+    # TODO: combine the residual with the sublayer output and layer-normalize the result.
+    x = residual_input + sublayer_output
+
+    mean = x.mean(dim=-1, keepdim=True)
+    var = x.var(dim=-1, unbiased=False, keepdim=True)
+
+    normalized = (x - mean) / torch.sqrt(var + eps)
+    out = normalized * gamma + beta
+
+    return out
 
 # Step 38 - apply_dropout_with_keep_mask (not yet solved)
 # TODO: implement
