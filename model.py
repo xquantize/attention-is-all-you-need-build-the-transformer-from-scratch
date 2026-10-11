@@ -433,8 +433,13 @@ def apply_residual_add_and_norm(residual_input, sublayer_output, gamma, beta, ep
 
     return out
 
-# Step 38 - apply_dropout_with_keep_mask (not yet solved)
-# TODO: implement
+# Step 38 - apply_dropout_with_keep_mask
+def apply_dropout_with_keep_mask(x, keep_mask, keep_prob):
+    # TODO: multiply x by the boolean keep_mask and rescale by 1/keep_prob.
+    if keep_prob == 0.0:
+        return torch.zeros_like(x)
+
+    return x * keep_mask.to(x.dtype) / keep_prob
 
 # Step 39 - encoder_layer_self_attention_sublayer (not yet solved)
 # TODO: implement
