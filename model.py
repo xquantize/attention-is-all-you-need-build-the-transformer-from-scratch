@@ -490,8 +490,93 @@ def encoder_layer_feed_forward_sublayer(x, w1, b1, w2, b2, gamma, beta):
 
     return out
 
-# Step 41 - assemble_encoder_layer (not yet solved)
-# TODO: implement
+# Step 41 - assemble_encoder_layer
+def assemble_encoder_layer(x, layer_params, num_heads, src_mask):
+    # TODO: chain the self-attention sublayer and the feed-forward sublayer using layer_params.
+    if isinstance(layer_params, dict):
+        w_q = layer_params.get('w_q')
+        w_k = layer_params.get('w_k')
+        w_v = layer_params.get('w_v')
+        w_o = layer_params.get('w_o')
+
+        gamma1 = layer_params.get('gamma1', layer_params.get('ln1_gamma'))
+        beta1 = layer_params.get('beta1', layer_params.get('ln1_beta'))
+
+        w1 = layer_params.get('w1')
+        b1 = layer_params.get('b1')
+        w2 = layer_params.get('w2')
+        b2 = layer_params.get('b2')
+
+        gamma2 = layer_params.get('gamma2', layer_params.get('ln2_gamma'))
+        beta2 = layer_params.get('beta2', layer_params.get('ln2_beta'))
+
+    elif isinstance(layer_params, (tuple, list)):
+        w_q, w_k, w_v, w_o, gamma1, beta1, w1, b1, w2, b2, gamma2, beta2 = layer_params
+
+    else:
+        raise TypeError("layer_params must be a dictionary, tuple, or list.")
+
+    batch_size, seq_len, d_model = x.shape
+    head_dim = d_model // num_heads
+
+    q = x @ w_q.transpose(-1, -2)
+    k = x @ w_k.transpose(-1, -2)
+    v = x @ w_v.transpose(-1, -2)
+
+    def _split(tensor: torch.Tensor) -> torch.Tensor:
+        return tensor.view(batch_size, seq_len, num_heads, head_dim).transpose(1, 2)
+
+    q_h, k_h, v_h = _split(q), _split(k), _split(v)
+    scores = (q_h @ k_h.transpose(-1, -2)) / math.sqrt(head_dim)
+
+    if src_mask is not None:
+        scores = scores.masked_fill(~src_mask, float('-inf'))
+
+    weights = torch.softmax(scores, dim=-1)
+    weights = torch.nan_to_num(weights, nan=0.0)
+    context = weights @ v_h
+
+    merged = context.transpose(1, 2).contiguous().view(batch_size, seq_len, num_heads * head_dim)
+    attn_out = merged @ w_o.transpose(-1, -2)
+
+    x_res1 = x + attn_out
+    mean1 = x_res1.mean(dim=-1, keepdim=True)
+    var1 = x_res1.var(dim=-1, unbiased=False, keepdim=True)
+    norm1 = (x_res1 - mean1) / torch.sqrt(var1 + 1e-5)
+    
+    if gamma1 is not None:
+        norm1 = norm1 * gamma1
+
+    if beta1 is not None:
+        norm1 = norm1 + beta1
+
+    x = norm1
+    h = x @ w1
+
+    if b1 is not None:
+        h = h + b1
+
+    h = torch.relu(h)
+    
+    ffn_out = h @ w2
+
+    if b2 is not None:
+        ffn_out = ffn_out + b2
+
+    x_res2 = x + ffn_out
+    mean2 = x_res2.mean(dim=-1, keepdim=True)
+    var2 = x_res2.var(dim=-1, unbiased=False, keepdim=True)
+    norm2 = (x_res2 - mean2) / torch.sqrt(var2 + 1e-5)
+    
+    if gamma2 is not None:
+        norm2 = norm2 * gamma2
+
+    if beta2 is not None:
+        norm2 = norm2 + beta2
+        
+    x = norm2
+
+    return x
 
 # Step 42 - stack_encoder_layers (not yet solved)
 # TODO: implement
