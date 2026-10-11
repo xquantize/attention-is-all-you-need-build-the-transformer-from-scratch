@@ -632,8 +632,58 @@ def decoder_layer_masked_self_attention_sublayer(y, w_q, w_k, w_v, w_o, gamma, b
 
     return norm
 
-# Step 44 - decoder_layer_cross_attention_sublayer (not yet solved)
-# TODO: implement
+# Step 44 - decoder_layer_cross_attention_sublayer
+import torch
+
+def decoder_layer_cross_attention_sublayer(y, encoder_output, w_q, w_k, w_v, w_o, gamma, beta, num_heads, src_mask):
+    # TODO: run multi-head cross-attention (Q from y, K/V from encoder_output) and wrap with add-and-norm
+    batch_size, tgt_seq_len, d_model = y.shape
+    _, src_seq_len, _ = encoder_output.shape
+    head_dim = d_model // num_heads
+
+    q = y @ w_q.transpose(-1, -2)
+    k = encoder_output @ w_k.transpose(-1, -2)
+    v = encoder_output @ w_v.transpose(-1, -2)
+
+    def _split_q(tensor: torch.Tensor) -> torch.Tensor:
+        return tensor.view(batch_size, tgt_seq_len, num_heads, head_dim).transpose(1, 2)
+    
+    def _split_kv(tensor: torch.Tensor) -> torch.Tensor:
+        return tensor.view(batch_size, src_seq_len, num_heads, head_dim).transpose(1, 2)
+
+    q_h = _split_q(q)
+    k_h = _split_kv(k)
+    v_h = _split_kv(v)
+
+    scores = (q_h @ k_h.transpose(-1, -2)) / math.sqrt(head_dim)
+
+    if src_mask is not None:
+        if src_mask.ndim == 2:
+            mask = src_mask.unsqueeze(1).unsqueeze(2)
+        else:
+            mask = src_mask
+
+        scores = scores.masked_fill(~mask, float('-inf'))
+
+    weights = torch.softmax(scores, dim=-1)
+    weights = torch.nan_to_num(weights, nan=0.0)
+    context = weights @ v_h
+
+    merged = context.transpose(1, 2).contiguous().view(batch_size, tgt_seq_len, num_heads * head_dim)
+    attn_out = merged @ w_o.transpose(-1, -2)
+
+    y_res = y + attn_out
+    mean = y_res.mean(dim=-1, keepdim=True)
+    var = y_res.var(dim=-1, unbiased=False, keepdim=True)
+    norm = (y_res - mean) / torch.sqrt(var + 1e-5)
+
+    if gamma is not None:
+        norm = norm * gamma
+
+    if beta is not None:
+        norm = norm + beta
+
+    return norm
 
 # Step 45 - decoder_layer_feed_forward_sublayer (not yet solved)
 # TODO: implement
