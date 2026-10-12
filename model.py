@@ -901,8 +901,45 @@ def run_transformer_forward(src_ids, tgt_ids, model_params, num_heads, pad_id):
 
     return apply_log_softmax_over_vocab(logits)
 
-# Step 52 - init_encoder_layer_parameters (not yet solved)
-# TODO: implement
+# Step 52 - init_encoder_layer_parameters
+import torch
+import math
+
+def init_encoder_layer_parameters(d_model, num_heads, d_ff):
+    """Return a dict of leaf tensors with requires_grad=True for one encoder layer."""
+    # TODO: allocate w_q, w_k, w_v, w_o, w1, b1, w2, b2, attn_gamma, attn_beta, ffn_gamma, ffn_beta.
+    if d_model % num_heads != 0:
+        raise ValueError(f"d_model ({d_model}) must be divisible by num_heads ({num_heads})")
+
+    dtype = torch.float32
+
+    def _xavier(fan_in, fan_out, shape):
+        bound = math.sqrt(6.0 / (fan_in + fan_out))
+        t = torch.empty(*shape, dtype=dtype).uniform_(-bound, bound)
+        return t.requires_grad_(True)
+
+    def _zeros(*shape):
+        return torch.zeros(*shape, dtype=dtype, requires_grad=True)
+
+    def _ones(*shape):
+        return torch.ones(*shape, dtype=dtype, requires_grad=True)
+
+    return {
+        "w_q": _xavier(d_model, d_model, (d_model, d_model)),
+        "w_k": _xavier(d_model, d_model, (d_model, d_model)),
+        "w_v": _xavier(d_model, d_model, (d_model, d_model)),
+        "w_o": _xavier(d_model, d_model, (d_model, d_model)),
+
+        "w1": _xavier(d_model, d_ff, (d_model, d_ff)),
+        "b1": _zeros(d_ff),
+        "w2": _xavier(d_ff, d_model, (d_ff, d_model)),
+        "b2": _zeros(d_model),
+
+        "attn_gamma": _ones(d_model),
+        "attn_beta": _zeros(d_model),
+        "ffn_gamma": _ones(d_model),
+        "ffn_beta": _zeros(d_model),
+    }
 
 # Step 53 - init_decoder_layer_parameters (not yet solved)
 # TODO: implement
