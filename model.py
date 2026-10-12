@@ -941,8 +941,53 @@ def init_encoder_layer_parameters(d_model, num_heads, d_ff):
         "ffn_beta": _zeros(d_model),
     }
 
-# Step 53 - init_decoder_layer_parameters (not yet solved)
-# TODO: implement
+# Step 53 - init_decoder_layer_parameters
+import torch
+
+def init_decoder_layer_parameters(d_model, num_heads, d_ff):
+    # TODO: return a dict of requires_grad tensors for one decoder layer
+    if d_model % num_heads != 0:
+        raise ValueError(f"d_model ({d_model}) must be divisible by num_heads ({num_heads})")
+
+    dtype = torch.float32
+
+    def _xavier(fan_in, fan_out, shape):
+        bound = math.sqrt(6.0 / (fan_in + fan_out))
+        t = torch.empty(*shape, dtype=dtype).uniform_(-bound, bound)
+        return t.requires_grad_(True)
+
+    def _zeros(*shape):
+        return torch.zeros(*shape, dtype=dtype, requires_grad=True)
+
+    def _ones(*shape):
+        return torch.ones(*shape, dtype=dtype, requires_grad=True)
+
+    def _square():
+        return _xavier(d_model, d_model, (d_model, d_model))
+
+    return {
+        "w_q_self": _square(),
+        "w_k_self": _square(),
+        "w_v_self": _square(),
+        "w_o_self": _square(),
+
+        "w_q_cross": _square(),
+        "w_k_cross": _square(),
+        "w_v_cross": _square(),
+        "w_o_cross": _square(),
+
+        "w1": _xavier(d_model, d_ff, (d_model, d_ff)),
+        "b1": _zeros(d_ff),
+        "w2": _xavier(d_ff, d_model, (d_ff, d_model)),
+        "b2": _zeros(d_model),
+
+        "self_gamma": _ones(d_model),
+        "self_beta": _zeros(d_model),
+        "cross_gamma": _ones(d_model),
+        "cross_beta": _zeros(d_model),
+        "ffn_gamma": _ones(d_model),
+        "ffn_beta": _zeros(d_model),
+    }
 
 # Step 54 - init_embedding_and_projection_parameters (not yet solved)
 # TODO: implement
