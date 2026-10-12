@@ -1274,8 +1274,64 @@ def compute_batch_training_loss(src_batch, tgt_batch, model_params, config):
     
     return average_loss_over_non_pad_tokens(total_loss, tgt_batch, pad_id)
 
-# Step 72 - run_training_step_with_backprop (not yet solved)
-# TODO: implement
+# Step 72 - run_training_step_with_backprop
+import torch
+
+def run_training_step_with_backprop(src_batch, tgt_batch, parameter_list, model_params, optimizer_state, step_number, config):
+    """Run one training iteration: zero grads, forward, backward, Noam LR, Adam step.
+
+    Returns the scalar loss value for the step as a Python float.
+    """
+    # TODO: zero grads, compute loss, backward, look up Noam LR, apply Adam step
+    encoder_aliases = {
+        "gamma1": "attn_gamma", "beta1": "attn_beta",
+        "gamma2": "ffn_gamma",  "beta2": "ffn_beta",
+    }
+
+    def _alias(layers, aliases):
+        if not isinstance(layers, (list, tuple)):
+            return layers
+        out = []
+        
+        for layer in layers:
+            if isinstance(layer, dict):
+                layer = dict(layer)
+                for new, old in aliases.items():
+                    if new not in layer and old in layer:
+                        layer[new] = layer[old]
+            out.append(layer)
+        return out
+
+    mp = dict(model_params)
+
+    for key in ("encoder_layers", "encoder_layer_params_list"):
+        if key in mp:
+            mp[key] = _alias(mp[key], encoder_aliases)
+
+    zero_all_parameter_gradients(parameter_list)
+
+    loss = compute_batch_training_loss(src_batch, tgt_batch, mp, config)
+    loss.backward()
+
+    d_model = config.get("d_model")
+
+    if d_model is None:
+        embedding = model_params.get("token_embedding", model_params.get("src_embedding"))
+        d_model = embedding.shape[-1]
+
+    warmup_steps = config.get("warmup_steps", 4000)
+    learning_rate = compute_noam_learning_rate(step_number, d_model, warmup_steps)
+
+    apply_adam_step_to_all_parameters(
+        parameter_list,
+        optimizer_state,
+        learning_rate,
+        beta1=config.get("beta1", 0.9),
+        beta2=config.get("beta2", 0.98),
+        epsilon=config.get("adam_epsilon", 1e-9),
+    )
+
+    return loss.item()
 
 # Step 73 - run_training_loop_for_steps (not yet solved)
 # TODO: implement
