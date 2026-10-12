@@ -810,8 +810,96 @@ def apply_log_softmax_over_vocab(logits):
     # TODO: Convert decoder logits (B, T, V) into log probabilities over the vocabulary axis.
     return F.log_softmax(logits, dim=-1)
 
-# Step 51 - run_transformer_forward (not yet solved)
-# TODO: implement
+# Step 51 - run_transformer_forward
+def run_transformer_forward(src_ids, tgt_ids, model_params, num_heads, pad_id):
+    # TODO: embed src+tgt, add PE, build masks, run encoder/decoder, project to log probs.
+    token_embedding = model_params.get(
+        "token_embedding",
+        model_params.get("src_embed", model_params.get("embedding")),
+    )
+    tgt_embedding = model_params.get("tgt_embed", token_embedding)
+
+    if isinstance(token_embedding, torch.nn.Embedding):
+        d_model = token_embedding.embedding_dim
+    else:
+        d_model = token_embedding.shape[-1]
+
+    def _embed(ids, table):
+        if ids.is_floating_point():
+            return ids
+        if isinstance(table, torch.nn.Embedding):
+            return table(ids)
+        if isinstance(table, torch.Tensor):
+            return F.embedding(ids, table, padding_idx=pad_id)
+        if callable(table):
+            return table(ids)
+        return ids
+
+    def _add_sinusoidal_pe(t):
+        seq_len, dm = t.size(1), t.size(-1)
+        pos = torch.arange(seq_len, dtype=t.dtype, device=t.device).unsqueeze(1)
+        div = torch.exp(
+            torch.arange(0, dm, 2, dtype=t.dtype, device=t.device)
+            * (-math.log(10000.0) / dm)
+        )
+        pe = torch.zeros(seq_len, dm, dtype=t.dtype, device=t.device)
+        pe[:, 0::2] = torch.sin(pos * div)
+        pe[:, 1::2] = torch.cos(pos * div)[:, : dm // 2]
+        return t + pe.unsqueeze(0)
+
+    x = _embed(src_ids, token_embedding) * math.sqrt(d_model)
+    y = _embed(tgt_ids, tgt_embedding) * math.sqrt(d_model)
+
+    pos_enc = model_params.get("pos_encoder")
+    pos_dec = model_params.get("pos_decoder", pos_enc)
+    x = pos_enc(x) if pos_enc is not None else _add_sinusoidal_pe(x)
+    y = pos_dec(y) if pos_dec is not None else _add_sinusoidal_pe(y)
+
+    if not src_ids.is_floating_point():
+        src_mask = src_ids != pad_id
+    else:
+        src_mask = torch.ones(src_ids.shape[:2], dtype=torch.bool, device=src_ids.device)
+
+    batch_size, tgt_seq_len = tgt_ids.shape[:2]
+    device = tgt_ids.device
+    causal_mask = torch.tril(
+        torch.ones((tgt_seq_len, tgt_seq_len), dtype=torch.bool, device=device)
+    )
+    if not tgt_ids.is_floating_point():
+        tgt_pad_mask = (tgt_ids != pad_id).unsqueeze(1)
+        tgt_mask = causal_mask & tgt_pad_mask
+    else:
+        tgt_mask = causal_mask.unsqueeze(0).expand(batch_size, -1, -1)
+
+    encoder_layers = model_params.get(
+        "encoder_layers", model_params.get("encoder_layer_params_list")
+    )
+    decoder_layers = model_params.get(
+        "decoder_layers", model_params.get("decoder_layer_params_list")
+    )
+
+    encoder_output = stack_encoder_layers(x, encoder_layers, num_heads, src_mask)
+    decoder_output = stack_decoder_layers(
+        y, encoder_output, decoder_layers, num_heads, src_mask, tgt_mask
+    )
+
+    output_proj = model_params.get(
+        "output_projection", model_params.get("output_projection_weight")
+    )
+    
+    if output_proj is None:
+        if isinstance(tgt_embedding, torch.nn.Embedding):
+            output_proj = tgt_embedding.weight.t()
+        elif isinstance(tgt_embedding, torch.Tensor):
+            output_proj = tgt_embedding.t()
+
+    logits = apply_final_output_projection(
+        decoder_output=decoder_output,
+        output_projection_weight=output_proj,
+        output_projection_bias=model_params.get("output_projection_bias"),
+    )
+
+    return apply_log_softmax_over_vocab(logits)
 
 # Step 52 - init_encoder_layer_parameters (not yet solved)
 # TODO: implement
