@@ -1205,8 +1205,74 @@ def zero_all_parameter_gradients(parameter_list):
     for param in parameter_list:
         param.grad = None
 
-# Step 71 - compute_batch_training_loss (not yet solved)
-# TODO: implement
+# Step 71 - compute_batch_training_loss
+def compute_batch_training_loss(src_batch, tgt_batch, model_params, config):
+    """One teacher-forced forward pass -> label-smoothed KL loss averaged over non-pad tokens.
+
+    model_params (read only; the same dict run_transformer_forward takes):
+      token_embedding, output_projection, encoder_layers, decoder_layers
+    config keys:
+      pad_id, start_id, vocab_size, smoothing, num_heads
+    """
+    # TODO: shift targets right, run the forward pass, build smoothed targets, and average the KL loss over non-pad tokens.
+    pad_id = config["pad_id"]
+    start_id = config["start_id"]
+    vocab_size = config["vocab_size"]
+    smoothing = config["smoothing"]
+    num_heads = config["num_heads"]
+
+    decoder_input = shift_targets_right_with_start_token(tgt_batch, start_id)
+
+    src_table = model_params.get("token_embedding", model_params.get("src_embedding"))
+    tgt_table = model_params.get("tgt_embedding", src_table)
+    d_model = src_table.shape[-1]
+
+    def _add_sinusoidal_pe(t):
+        seq_len, dm = t.size(1), t.size(-1)
+        pos = torch.arange(seq_len, dtype=t.dtype, device=t.device).unsqueeze(1)
+        div = torch.exp(torch.arange(0, dm, 2, dtype=t.dtype, device=t.device)
+                        * (-math.log(10000.0) / dm))
+        pe = torch.zeros(seq_len, dm, dtype=t.dtype, device=t.device)
+        pe[:, 0::2] = torch.sin(pos * div)
+        pe[:, 1::2] = torch.cos(pos * div)[:, : dm // 2]
+        return t + pe.unsqueeze(0)
+
+    x = _add_sinusoidal_pe(F.embedding(src_batch, src_table, padding_idx=pad_id) * math.sqrt(d_model))
+    y = _add_sinusoidal_pe(F.embedding(decoder_input, tgt_table, padding_idx=pad_id) * math.sqrt(d_model))
+
+    src_mask = (src_batch != pad_id)[:, None, None, :]
+    tgt_len = decoder_input.size(1)
+    causal = torch.tril(torch.ones(tgt_len, tgt_len, dtype=torch.bool, device=decoder_input.device))
+    tgt_mask = causal[None, None, :, :] & (decoder_input != pad_id)[:, None, None, :]
+
+    encoder_layers = model_params.get("encoder_layers", model_params.get("encoder_layer_params_list"))
+    decoder_layers = model_params.get("decoder_layers", model_params.get("decoder_layer_params_list"))
+    encoder_output = stack_encoder_layers(x, encoder_layers, num_heads, src_mask)
+    decoder_output = stack_decoder_layers(y, encoder_output, decoder_layers, num_heads, src_mask, tgt_mask)
+
+    output_proj = model_params.get("output_projection", model_params.get("output_projection_weight"))
+
+    if output_proj is None:
+        output_proj = tgt_table.t()
+
+    logits = apply_final_output_projection(
+        decoder_output=decoder_output,
+        output_projection_weight=output_proj,
+        output_projection_bias=model_params.get("output_projection_bias"),
+    )
+
+    log_probs = apply_log_softmax_over_vocab(logits)
+
+    smoothed = build_uniform_smoothing_distribution(
+        log_probs.shape, vocab_size, smoothing
+    ).to(device=log_probs.device, dtype=log_probs.dtype)
+
+    smoothed = set_confidence_on_gold_tokens(smoothed, tgt_batch, 1.0 - smoothing)
+    smoothed = zero_pad_column_and_pad_token_rows(smoothed, tgt_batch, pad_id)
+
+    total_loss = compute_label_smoothed_kl_loss(log_probs, smoothed)
+    
+    return average_loss_over_non_pad_tokens(total_loss, tgt_batch, pad_id)
 
 # Step 72 - run_training_step_with_backprop (not yet solved)
 # TODO: implement
